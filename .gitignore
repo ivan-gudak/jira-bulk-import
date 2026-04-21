@@ -5,6 +5,9 @@
 # Imported data
 .data/
 
+# Claude Code memoryy
+.remember/
+
 # Python
 __pycache__/
 *.py[cod]
