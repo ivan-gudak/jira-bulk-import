@@ -66,6 +66,10 @@ python src/main.py path/to/my-ids.txt
 # Force export of all work items, ignoring interval settings
 python src/main.py --force
 python src/main.py -f
+
+# Export to a custom directory (default: .data)
+python src/main.py --export-dir=my-exports
+python src/main.py path/to/my-ids.txt --export-dir=/absolute/path/to/output
 ```
 
 ## Output
@@ -102,6 +106,11 @@ If a ticket fails (e.g. permission denied, deleted), the error is logged and the
 **macOS/Linux (cron):**
 ```cron
 0 7 * * * cd /path/to/jira_bulk_importer && .venv/bin/python src/main.py >> .data/import.log 2>&1
+```
+
+To export to a custom directory, add `--export-dir`:
+```cron
+0 7 * * * cd /path/to/jira_bulk_importer && .venv/bin/python src/main.py --export-dir=/path/to/vault/jira >> /path/to/vault/jira/import.log 2>&1
 ```
 
 **Windows (Task Scheduler):** point to `.venv\Scripts\python.exe src\main.py` with the project root as the working directory.

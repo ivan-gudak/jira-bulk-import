@@ -19,7 +19,7 @@ from config import FIELD_MAPPING, JIRA_BASE_URL
 from report_generator import generate_report, generate_snapshot_index
 
 
-DATA_DIR = Path(os.getcwd()) / ".data"
+DEFAULT_EXPORT_DIR = ".data"
 
 
 def read_jira_ids(ids_file: str) -> list[tuple[str, int]]:
@@ -48,11 +48,11 @@ def read_jira_ids(ids_file: str) -> list[tuple[str, int]]:
     return ids
 
 
-def should_skip(work_item_id: str, interval_days: int) -> bool:
+def should_skip(work_item_id: str, interval_days: int, data_dir: Path) -> bool:
     """Return True if the ticket should be skipped based on last export time."""
     if interval_days == 0:
         return True
-    item_dir = DATA_DIR / work_item_id
+    item_dir = data_dir / work_item_id
     if not item_dir.exists():
         return False
     import re
@@ -71,9 +71,9 @@ def should_skip(work_item_id: str, interval_days: int) -> bool:
     return elapsed_days < (interval_days * 0.5)
 
 
-def import_ticket(jira_client, work_item_id: str, timestamp: str) -> None:
-    """Import a single Jira ticket into .data/<ID>/ with timestamp-based filenames."""
-    item_dir = DATA_DIR / work_item_id
+def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path) -> None:
+    """Import a single Jira ticket into <data_dir>/<ID>/ with timestamp-based filenames."""
+    item_dir = data_dir / work_item_id
     attachments_dir = item_dir / "Attachments" / timestamp
     comments_dir = item_dir / "Comments"
     shared_dir = item_dir / "attachments_shared"
@@ -125,12 +125,18 @@ def main():
         action="store_true",
         help="Force export of all work items, ignoring interval settings.",
     )
+    parser.add_argument(
+        "--export-dir",
+        default=DEFAULT_EXPORT_DIR,
+        help=f"Output directory for exported data (default: {DEFAULT_EXPORT_DIR})",
+    )
     args = parser.parse_args()
 
+    data_dir = Path(os.getcwd()) / args.export_dir
     timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 
-    # Ensure .data exists
-    DATA_DIR.mkdir(exist_ok=True)
+    # Ensure export dir exists
+    data_dir.mkdir(parents=True, exist_ok=True)
 
     # Read IDs
     try:
@@ -157,15 +163,15 @@ def main():
     # Process each ticket
     success, failed, skipped = 0, [], 0
     for work_item_id, interval_days in jira_ids:
-        if not args.force and should_skip(work_item_id, interval_days):
+        if not args.force and should_skip(work_item_id, interval_days, data_dir):
             reason = "disabled" if interval_days == 0 else f"interval={interval_days}d"
             print(f"[{work_item_id}] Skipped ({reason})\n")
             skipped += 1
             continue
         print(f"[{work_item_id}]")
         try:
-            import_ticket(jira_client, work_item_id, timestamp)
-            generate_snapshot_index(DATA_DIR / work_item_id)
+            import_ticket(jira_client, work_item_id, timestamp, data_dir)
+            generate_snapshot_index(data_dir / work_item_id)
             success += 1
         except Exception as e:
             print(f"  ERROR: {e}")
@@ -182,8 +188,8 @@ def main():
     print("=" * 50)
 
     # Generate index
-    report_path = DATA_DIR / "jira-export-index.md"
-    report_path.write_text(generate_report(DATA_DIR, jira_ids), encoding="utf-8")
+    report_path = data_dir / "jira-export-index.md"
+    report_path.write_text(generate_report(data_dir, jira_ids), encoding="utf-8")
     print(f"\nIndex: {report_path.relative_to(Path(os.getcwd()))}")
 
 
