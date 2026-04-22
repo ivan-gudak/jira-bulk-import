@@ -1,4 +1,10 @@
 # One Jira ID per line. Blank lines and lines starting with # are ignored.
+#
+# Optional interval suffix: PROJ-123=N
+#   N = number of days between exports (skip if last export < N*0.5 days ago)
+#   N = 1 (default) — skip if exported less than 12 hours ago
+#   N = 3           — skip if exported less than 2.5 days ago
+#   N = 0           — disabled (never export)
 PROJ-123
-PROJ-456
-TEAM-789
+PROJ-456=3
+TEAM-789=0
