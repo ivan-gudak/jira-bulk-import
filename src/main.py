@@ -21,6 +21,15 @@ from report_generator import generate_report, generate_snapshot_index
 
 DEFAULT_EXPORT_DIR = ".data"
 
+_cwd = Path(os.getcwd())
+
+def _display_path(p: Path) -> Path:
+    """Return a CWD-relative path, or the absolute path if outside CWD."""
+    try:
+        return p.relative_to(_cwd)
+    except ValueError:
+        return p
+
 
 def read_jira_ids(ids_file: str) -> list[tuple[str, int]]:
     """Read Jira IDs from file. Returns list of (id, interval_days).
@@ -98,7 +107,7 @@ def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path
     main_path = item_dir / f"{work_item_id} - {timestamp}.md"
     with open(main_path, "w", encoding="utf-8") as f:
         f.write(markdown_content)
-    print(f"  Written:  {main_path.relative_to(Path(os.getcwd()))}")
+    print(f"  Written:  {_display_path(main_path)}")
 
     # Generate comments
     comments_handler = CommentsHandler(JIRA_BASE_URL, generator.attachment_handler)
@@ -107,7 +116,7 @@ def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path
     comments_path = comments_dir / f"{work_item_id}-comments-{timestamp}.md"
     with open(comments_path, "w", encoding="utf-8") as f:
         f.write(comments_content)
-    print(f"  Comments: {comments_path.relative_to(Path(os.getcwd()))}")
+    print(f"  Comments: {_display_path(comments_path)}")
 
 
 def main():
@@ -190,7 +199,7 @@ def main():
     # Generate index
     report_path = data_dir / "jira-export-index.md"
     report_path.write_text(generate_report(data_dir, jira_ids), encoding="utf-8")
-    print(f"\nIndex: {report_path.relative_to(Path(os.getcwd()))}")
+    print(f"\nIndex: {_display_path(report_path)}")
 
 
 if __name__ == "__main__":
