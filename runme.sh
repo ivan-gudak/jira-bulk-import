@@ -15,5 +15,5 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Export to a custom directory (default: .data)
 # python src/main.py --export-dir=my-exports
-python src/main.py .jira.ids --export-dir=/mnt/c/workspaces/obsidian_vault/_archive/jira-snapshots
+python src/main.py .jira.ids --export-dir="$VAULT_PATH/_archive/jira-snapshots"
 
