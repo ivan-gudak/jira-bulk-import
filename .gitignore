@@ -4,6 +4,7 @@
 
 # Imported data
 .data/
+.idea/
 
 # Claude Code memoryy
 .remember/

@@ -2,6 +2,7 @@
 # 1. Create and activate a virtual environment
 python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt -q
 
 # Run with default .jira.ids
 # python src/main.py
