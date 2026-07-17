@@ -14,17 +14,74 @@ class MarkdownGenerator:
     """Generates markdown from Jira issue data."""
 
     def __init__(self, issue: Any, jira_client: Any = None,
-                 attachments_dir: str = None, shared_dir: str = None):
+                 attachments_dir: str = None, shared_dir: str = None,
+                 field_names: dict | None = None):
         self.issue = issue
         self.fields = issue.fields
         self.converter = JiraMarkupConverter(JIRA_BASE_URL)
         self.formatter = FieldFormatter()
         self.attachment_handler = None
+        self.field_names = field_names or {}
 
         if jira_client and attachments_dir:
             self.attachment_handler = AttachmentHandler(
                 jira_client, attachments_dir, shared_dir=shared_dir
             )
+
+    @staticmethod
+    def _is_empty_description(description: Any) -> bool:
+        """True when description is None, empty, or whitespace-only."""
+        return not description or not str(description).strip()
+
+    def _format_additional_value(self, value: Any) -> str | None:
+        """Format one custom-field value for the Details section. Returns None if empty."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped or stripped in ("{}", "[]"):
+                return None
+            converted = self.converter.convert(value)
+            if self.attachment_handler is not None:
+                converted = self.attachment_handler.replace_attachment_references(converted)
+            return converted.strip() or None
+        if isinstance(value, list):
+            parts = []
+            for item in value:
+                if hasattr(item, 'displayName'):
+                    parts.append(item.displayName)
+                else:
+                    parts.append(self.formatter.format_custom_field(item))
+            parts = [p for p in parts if p]
+            return ', '.join(parts) if parts else None
+        if hasattr(value, 'displayName'):
+            return value.displayName
+        return self.formatter.format_custom_field(value)
+
+    def _generate_additional_fields(self, issue: Any) -> str | None:
+        """Render populated custom fields not already shown elsewhere, as a Details section.
+
+        Used as a fallback when the standard description is empty/missing (e.g. RFE tickets
+        that carry their content in custom fields instead of the description field).
+        """
+        excluded = set(FIELD_MAPPING.values())
+        lines = []
+        for field_id, display_name in sorted(self.field_names.items(), key=lambda kv: kv[1]):
+            if not field_id.startswith('customfield_'):
+                continue
+            if field_id in excluded:
+                continue
+            value = getattr(issue.fields, field_id, None)
+            if value is None:
+                continue
+            formatted = self._format_additional_value(value)
+            if not formatted:
+                continue
+            lines.append(f"### {display_name}")
+            lines.append("")
+            lines.append(formatted)
+            lines.append("")
+        if not lines:
+            return None
+        return "## Details\n\n" + "\n".join(lines).rstrip()
 
     def generate_frontmatter(self) -> str:
         lines = ["---"]
@@ -121,7 +178,7 @@ class MarkdownGenerator:
             lines.append("")
 
         description = getattr(self.fields, "description", None)
-        if description:
+        if not self._is_empty_description(description):
             lines.append("## Description")
             lines.append("")
             converted = self.converter.convert(description)
@@ -129,14 +186,32 @@ class MarkdownGenerator:
                 converted = self.attachment_handler.replace_attachment_references(converted)
             lines.append(converted)
             lines.append("")
+        else:
+            details = self._generate_additional_fields(self.issue)
+            if details:
+                lines.append(details)
+                lines.append("")
 
         if self.attachment_handler and (images or others):
             lines.append(self.attachment_handler.get_attachment_list_markdown(images, others))
 
+        release_relevant = getattr(self.fields, "customfield_15900", None)
+        release_change_type = getattr(self.fields, "customfield_22157", None)
+        release_versions = getattr(self.fields, "customfield_20300", None)
+        release_category = getattr(self.fields, "customfield_19502", None)
         release_title = getattr(self.fields, "customfield_19701", None)
         release_summary = getattr(self.fields, "customfield_15000", None)
-        if release_title or release_summary:
+        if any((release_relevant, release_change_type, release_versions, release_category, release_title, release_summary)):
             lines.append("## Release Notes")
+            lines.append("")
+            if release_relevant:
+                lines.append(f"**Relevant for release notes:** {self.formatter.format_custom_field(release_relevant)}")
+            if release_change_type:
+                lines.append(f"**Change type:** {self.formatter.format_custom_field(release_change_type)}")
+            if release_versions:
+                lines.append(f"**Release versions:** {self.formatter.format_custom_field(release_versions)}")
+            if release_category:
+                lines.append(f"**Category:** {self.formatter.format_custom_field(release_category)}")
             lines.append("")
             if release_title:
                 lines.append(f"**Title:** {release_title}")

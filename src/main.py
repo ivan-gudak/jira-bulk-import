@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from jira_auth import JiraAuth
 from markdown_generator import MarkdownGenerator
 from comments_handler import CommentsHandler
-from config import FIELD_MAPPING, JIRA_BASE_URL
+from config import JIRA_BASE_URL
 from report_generator import generate_report, generate_snapshot_index
 
 
@@ -80,7 +80,7 @@ def should_skip(work_item_id: str, interval_days: int, data_dir: Path) -> bool:
     return elapsed_days < (interval_days * 0.5)
 
 
-def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path) -> None:
+def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path, field_names: dict) -> None:
     """Import a single Jira ticket into <data_dir>/<ID>/ with timestamp-based filenames."""
     item_dir = data_dir / work_item_id
     attachments_dir = item_dir / "Attachments" / timestamp
@@ -90,9 +90,9 @@ def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path
     for d in (attachments_dir, comments_dir, shared_dir):
         d.mkdir(parents=True, exist_ok=True)
 
-    # Fetch issue
-    field_ids = ",".join(set(FIELD_MAPPING.values())) + ",attachment,comment"
-    issue = jira_client.issue(work_item_id, fields=field_ids)
+    # Fetch issue with all fields (not just the mapped ones) so the RFE fallback
+    # can render populated custom fields when the description is empty.
+    issue = jira_client.issue(work_item_id)
     print(f"  Fetched: {issue.key} - {issue.fields.summary}")
 
     # Generate main markdown
@@ -101,6 +101,7 @@ def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path
         jira_client=jira_client,
         attachments_dir=str(attachments_dir),
         shared_dir=str(shared_dir),
+        field_names=field_names,
     )
     markdown_content = generator.generate_markdown(timestamp)
 
@@ -165,6 +166,8 @@ def main():
         auth = JiraAuth()
         jira_client = auth.get_jira_client()
         print(f"Connected to: {auth.server}\n")
+        # Map customfield ids to display names (one call) for the Details fallback
+        field_names = {f["id"]: f["name"] for f in jira_client.fields()}
     except (FileNotFoundError, ValueError) as e:
         print(f"Auth error: {e}")
         sys.exit(1)
@@ -179,7 +182,7 @@ def main():
             continue
         print(f"[{work_item_id}]")
         try:
-            import_ticket(jira_client, work_item_id, timestamp, data_dir)
+            import_ticket(jira_client, work_item_id, timestamp, data_dir, field_names)
             generate_snapshot_index(data_dir / work_item_id)
             success += 1
         except Exception as e:
