@@ -1,5 +1,14 @@
 #!/bin/bash
+set -e
 cd "$(dirname "$0")" || exit 1
+
+# Without this, an unset VAULT_PATH expands the destination below to
+# "/_archive/jira-snapshots" -- a new directory at the filesystem root.
+if [ -z "$VAULT_PATH" ]; then
+  echo "Error: VAULT_PATH is not set. Set it, or run src/main.py with an"
+  echo "       explicit --export-dir=<path>."
+  exit 1
+fi
 # 1. Create and activate a virtual environment
 # A venv is machine-specific, and this one lives inside the Obsidian vault, so a
 # venv built on another machine can arrive here by vault sync. Re-running
@@ -25,5 +34,5 @@ pip install -r requirements.txt -q
 
 # Export to a custom directory (default: .data)
 # python src/main.py --export-dir=my-exports
-python src/main.py .jira.ids --export-dir="$VAULT_PATH/_archive/jira-snapshots"
+python src/main.py .jira.ids --export-dir="$VAULT_PATH/_archive/jira-snapshots" "$@"
 

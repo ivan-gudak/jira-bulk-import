@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 # Add src directory to path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -22,6 +23,51 @@ from report_generator import generate_report, generate_snapshot_index
 DEFAULT_EXPORT_DIR = ".data"
 
 _cwd = Path(os.getcwd())
+
+
+class ExportPathError(ValueError):
+    """Raised when --export-dir cannot be used as a destination."""
+
+
+def resolve_export_dir(export_dir: str, cwd: Optional[Path] = None) -> Path:
+    """Resolve --export-dir to an absolute directory. Creates nothing.
+
+    runme.sh builds the destination as "$VAULT_PATH/_archive/jira-snapshots".
+    With VAULT_PATH unset that collapses to "/_archive/jira-snapshots", and
+    joining an absolute path onto the working directory discards the working
+    directory -- so the export aims at the filesystem root. That is never what
+    anyone asked for, so it is reported rather than attempted.
+    """
+    raw = (export_dir or "").strip()
+    if not raw:
+        raise ExportPathError(
+            "--export-dir is empty. Pass a directory, or leave the flag off to "
+            f"use the default ({DEFAULT_EXPORT_DIR})."
+        )
+
+    target = Path(raw).expanduser()
+    if not target.is_absolute():
+        target = (Path(cwd) if cwd else _cwd) / target
+    target = Path(os.path.normpath(target))
+
+    # An unset VAULT_PATH leaves the whole suffix hanging off the filesystem
+    # root ("/_archive/jira-snapshots"). Counting path components cannot tell
+    # that apart from a real destination -- the suffix is configurable -- but
+    # the filesystem can: it would mean creating a new top-level directory,
+    # which is never the intent.
+    root = Path(target.anchor)
+    nearest = target
+    while not nearest.exists() and nearest != nearest.parent:
+        nearest = nearest.parent
+    if nearest == root:
+        raise ExportPathError(
+            f"--export-dir resolved to {target}, which would create a new "
+            f"directory directly under {root}. That is what an unset "
+            'VAULT_PATH looks like once the shell expands '
+            '"$VAULT_PATH/_archive/jira-snapshots". Set VAULT_PATH, or pass '
+            "--export-dir explicitly."
+        )
+    return target
 
 def _display_path(p: Path) -> Path:
     """Return a CWD-relative path, or the absolute path if outside CWD."""
@@ -142,11 +188,22 @@ def main():
     )
     args = parser.parse_args()
 
-    data_dir = Path(os.getcwd()) / args.export_dir
+    try:
+        data_dir = resolve_export_dir(args.export_dir)
+    except ExportPathError as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 
     # Ensure export dir exists
-    data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"Error: cannot create the export directory {data_dir}: {e}")
+        sys.exit(1)
+
+    print(f"Destination: {data_dir}")
 
     # Read IDs
     try:

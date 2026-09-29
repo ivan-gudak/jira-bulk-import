@@ -7,7 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Set up environment
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # or requirements.txt, without pytest
+
+# Run the tests
+python -m pytest
 
 # Run importer (from project root)
 python src/main.py                      # uses .jira.ids, exports to .data/
@@ -15,7 +18,7 @@ python src/main.py path/to/custom.ids   # custom IDs file
 python src/main.py --export-dir=output  # custom export directory
 ```
 
-There are no tests or linting configured. The script must be run from the project root — `JiraAuth` and output paths resolve relative to `os.getcwd()`.
+The script must be run from the project root — `JiraAuth` and a relative `--export-dir` resolve against `os.getcwd()`. `--export-dir` is rejected when it is empty or would create a new directory at the filesystem root, which is what an unset `VAULT_PATH` leaves behind once `runme.sh` expands `"$VAULT_PATH/_archive/jira-snapshots"`; `runme.sh` checks `VAULT_PATH` up front for the same reason.
 
 ## Configuration
 
