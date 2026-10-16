@@ -39,6 +39,11 @@ def _list_snapshots(item_dir: Path) -> list[tuple[str, str]]:
     return snapshots
 
 
+def _cell(text: str) -> str:
+    """Text for a table cell: a pipe would end the cell."""
+    return text.replace("|", "\\|")
+
+
 def _md_table(headers: list[str], rows: list[list[str]]) -> str:
     widths = [max(len(h), max((len(r[i]) for r in rows), default=0))
               for i, h in enumerate(headers)]
@@ -114,7 +119,7 @@ def generate_report(data_dir: Path, configured: list[tuple[str, int]]) -> str:
         summary, issue_type, last_ts = _item_meta(jira_id)
         id_link = f"[[{jira_id}-snapshot-index\\|{jira_id}]]"
         last_cell = f"[[{jira_id} - {last_ts}\\|{last_ts}]]" if last_ts else "never"
-        rows1.append([id_link, summary, issue_type, str(interval), last_cell])
+        rows1.append([id_link, _cell(summary), _cell(issue_type), str(interval), last_cell])
 
     rows1.sort(key=lambda r: ("0" if r[4] == "never" else "1" + r[4]), reverse=True)
 
@@ -130,7 +135,7 @@ def generate_report(data_dir: Path, configured: list[tuple[str, int]]) -> str:
                 continue
             id_link = f"[[{jira_id}-snapshot-index\\|{jira_id}]]"
             last_cell = f"[[{jira_id} - {last_ts}\\|{last_ts}]]"
-            rows2.append([id_link, summary, issue_type, last_cell])
+            rows2.append([id_link, _cell(summary), _cell(issue_type), last_cell])
 
     rows2.sort(key=lambda r: r[3], reverse=True)
 

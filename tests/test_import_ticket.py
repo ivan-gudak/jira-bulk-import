@@ -90,3 +90,12 @@ def test_an_unreadable_attachment_record_means_downloading_again(tmp_path):
     second = _run(tmp_path, att, "2026-10-17 08-00-00")
     assert att.downloads == 2
     assert _pooled(att) in second
+
+
+def test_an_attachment_name_cannot_leave_the_pool(tmp_path):
+    """The name comes from whoever attached the file."""
+    att = FakeAttachment("10", "../../escaped.png", b"png")
+    second = _run(tmp_path, att, "2026-10-16 08-00-00")
+    pooled = f"{hashlib.sha256(b'png').hexdigest()[:8]}_escaped.png"
+    assert pooled in second
+    assert [p.parent for p in tmp_path.rglob("*.png")] == [tmp_path / "PROJ-1" / "attachments_shared"]
