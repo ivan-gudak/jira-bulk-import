@@ -5,6 +5,7 @@ Reads a list of Jira IDs and imports each as a daily markdown snapshot.
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Optional
 # Add src directory to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from jira_auth import JiraAuth
+from jira_auth import JiraAuth, describe
 from markdown_generator import MarkdownGenerator
 from comments_handler import CommentsHandler
 from config import JIRA_BASE_URL
@@ -21,6 +22,7 @@ from report_generator import generate_report, generate_snapshot_index
 
 
 DEFAULT_EXPORT_DIR = ".data"
+_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*-[0-9]+$")
 
 _cwd = Path(os.getcwd())
 
@@ -85,21 +87,26 @@ def read_jira_ids(ids_file: str) -> list[tuple[str, int]]:
     path = Path(ids_file)
     if not path.exists():
         raise FileNotFoundError(f"IDs file not found: {ids_file}")
-    ids = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
+    ids, bad = [], []
+    # utf-8-sig: an editor's byte-order mark must not become part of the first ID.
+    with open(path, "r", encoding="utf-8-sig") as f:
+        for number, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            if "=" in line:
-                jira_id, _, val = line.partition("=")
-                try:
-                    interval = int(val)
-                except ValueError:
-                    interval = 1
-            else:
-                jira_id, interval = line, 1
-            ids.append((jira_id.strip(), interval))
+            jira_id, sep, val = line.partition("=")
+            jira_id = jira_id.strip()
+            # The ID names a folder: "PROJ 2" or "../x" must not become one.
+            if not _ID.match(jira_id):
+                bad.append(f"line {number}: {jira_id!r} is not a Jira ID")
+                continue
+            try:
+                interval = int(val) if sep else 1
+            except ValueError:
+                interval = 1
+            ids.append((jira_id, interval))
+    if bad:
+        raise ValueError(f"{ids_file}: " + "; ".join(bad) + ".")
     return ids
 
 
@@ -211,7 +218,7 @@ def main():
     # Read IDs
     try:
         jira_ids = read_jira_ids(args.ids_file)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}")
         sys.exit(1)
 
@@ -246,8 +253,8 @@ def main():
             generate_snapshot_index(data_dir / work_item_id)
             success += 1
         except Exception as e:
-            print(f"  ERROR: {e}")
-            failed.append((work_item_id, str(e)))
+            print(f"  ERROR: {describe(e)}")
+            failed.append((work_item_id, describe(e)))
         print()
 
     # Summary

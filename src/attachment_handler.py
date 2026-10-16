@@ -11,6 +11,17 @@ import requests
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 
+from jira_auth import describe
+
+
+def _local_name(filename: str) -> str:
+    """A Jira attachment name as a file name, never a path.
+
+    The name comes from whoever attached the file: "../x" or "/abs/x" must not
+    write outside the snapshot."""
+    name = Path(filename.replace("\\", "/")).name
+    return name if name not in ("", ".", "..") else "attachment"
+
 
 class AttachmentHandler:
     """Handles downloading and processing of Jira attachments."""
@@ -117,14 +128,14 @@ class AttachmentHandler:
                 if pooled and (self.shared_dir / pooled).is_file():
                     print(f"  Reused (unchanged): {pooled}")
                     return pooled
-                pooled = self._store_in_shared_pool(attachment.filename, attachment.get())
+                pooled = self._store_in_shared_pool(_local_name(attachment.filename), attachment.get())
                 self.pooled_by_id[str(attachment.id)] = pooled
                 return pooled
 
             # Legacy path: write directly to per-import attachments_dir
             content = attachment.get()
             self.attachments_dir.mkdir(parents=True, exist_ok=True)
-            local_filename = self._get_unique_filename(attachment.filename)
+            local_filename = self._get_unique_filename(_local_name(attachment.filename))
             local_path = self.attachments_dir / local_filename
             with open(local_path, 'wb') as f:
                 f.write(content)
@@ -132,7 +143,7 @@ class AttachmentHandler:
             return local_filename
             
         except Exception as e:
-            print(f"  Warning: Failed to download {attachment.filename}: {e}")
+            print(f"  Warning: Failed to download {attachment.filename}: {describe(e)}")
             return None
     
     def _store_in_shared_pool(self, original_filename: str, content: bytes) -> str:
