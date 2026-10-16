@@ -20,7 +20,12 @@ if [ ! -x .venv/bin/python ] || ! .venv/bin/python -c '' 2>/dev/null; then
   python3 -m venv --clear .venv
 fi
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt -q
+# jiramd is pinned in requirements.txt (…@vX.Y.Z). Install it only when the
+# installed version differs, so a run does not re-fetch it from GitHub.
+PIN=$(sed -n 's/.*@v\([0-9][0-9.]*\).*/\1/p' requirements.txt)
+if [ "$(python -c 'import jiramd; print(jiramd.__version__)' 2>/dev/null)" != "$PIN" ]; then
+  pip install -q --upgrade -r requirements.txt
+fi
 
 # Run with default .jira.ids
 # python src/main.py
