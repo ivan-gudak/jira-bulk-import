@@ -4,11 +4,16 @@ Imports Jira work items as timestamped markdown snapshots, including comments an
 
 The output is meant to be read in [Obsidian](https://obsidian.md): images are embedded with `![[...]]`, comments are transcluded, and the indexes link with wikilinks.
 
+The work is done by [jiramd](https://github.com/ihudak/jiramd) (`jiramd snapshot`),
+the open-source tool this one became. This repository keeps the Dynatrace side:
+the settings in `jiramd.toml`, `runme.sh`, and `src/main.py`, which keeps this
+tool's command line, `.jira.ids`, `.jira.config` and default output directory.
+
 ## Requirements
 
-- Python 3.10 or later
+- Python 3.11 or later
 - A Jira Cloud account with read access to the tickets, and an API token for it
-- The Jira site this copy is configured for — see [Settings tied to one Jira site](#settings-tied-to-one-jira-site)
+- Network access to GitHub the first time, to install jiramd
 
 ## Setup
 
@@ -41,7 +46,8 @@ Generate an API token at: https://id.atlassian.com/manage-profile/security/api-t
 Alternatively, set environment variables `JIRA_SERVER`, `JIRA_EMAIL`, `JIRA_TOKEN`. They take precedence only when all three are set; if any is missing, `.jira.config` is read and its values are used.
 
 ### `.jira.ids`
-One Jira ID per line. Lines starting with `#` and blank lines are ignored.
+One Jira ID per line. Blank lines and everything after a `#` are ignored. A line
+that is not a Jira ID (`PROJ-123`) stops the run, naming its line number.
 
 An optional `=N` suffix controls how often a work item is exported:
 
@@ -60,7 +66,7 @@ TEAM-789=0
 |--------|-----------|
 | _(none)_ or `=1` | Skip if last export < 12 hours ago |
 | `=N` | Skip if last export < N × 0.5 days ago |
-| `=0` | Always skip (disabled) |
+| `=0` | Always skip (disabled); `--force` exports it anyway |
 
 ## Usage
 
@@ -128,7 +134,9 @@ run. Nothing uses them; they can be deleted.
 
 ### What a snapshot contains
 
-- YAML frontmatter with the fields listed in `EXPORT_FIELDS` (`src/config.py`)
+- YAML frontmatter with the fields listed under `[page] frontmatter` in
+  `jiramd.toml`, ending with `updated:` (Jira's last change, in UTC)
+- A backlink to the item's snapshot history
 - Metadata, status details and description, converted from Jira markup
 - **Details**, in place of an empty description — every populated custom field
   not already shown elsewhere, one subsection each. Tickets such as RFEs keep
@@ -141,16 +149,17 @@ run. Nothing uses them; they can be deleted.
 
 ### Personal data
 
-Snapshots are not anonymized: assignee, reporter, comment authors, mentions and
-email addresses appear as Jira returns them. Keep that in mind before sharing or
-committing an export. (The sibling `jira-workitem-import` does anonymize.)
+Snapshots are not anonymized (`[snapshot] anonymize = false` in `jiramd.toml`):
+assignee, reporter, comment authors, mentions and email addresses appear as Jira
+returns them. Keep that in mind before sharing or committing an export. Set it to
+`true` to anonymize, as `jira-workitem-import` does.
 
 ### Navigation
 
 - **`jira-export-index.md`** — top-level table of contents. Lists all configured work items (with export interval and last export) and any orphaned items (present in `.data/` but removed from `.jira.ids`). Jira IDs link to the per-item snapshot index; the Last Export column links directly to the latest snapshot.
 - **`<ID>-snapshot-index.md`** — per-item history table (date, timestamp, link to snapshot). Links back to the index.
 
-If a ticket fails (e.g. permission denied, deleted), the error is logged and the remaining tickets continue.
+If a ticket fails (e.g. permission denied, deleted), the error is logged and the remaining tickets continue; an attachment that could not be downloaded is listed under *Incomplete*. Either makes the exit status 1.
 
 ## Scheduling
 
@@ -166,19 +175,22 @@ To export to a custom directory, add `--export-dir`:
 
 **Windows (Task Scheduler):** point to `.venv\Scripts\python.exe src\main.py` with the project root as the working directory.
 
-## Settings tied to one Jira site
+## Dynatrace settings: `jiramd.toml`
 
-This copy is set up for one Jira site, and pointing `SERVER` at another site is
-not enough:
+Everything specific to dt-rnd lives in `jiramd.toml`, read by jiramd: the
+frontmatter fields, the Metadata block, the *Status Details* and *Release Notes*
+sections, and `anonymize = false`. Several custom fields share their name with
+another field on dt-rnd, so they are listed by ID; `.venv/bin/jiramd fields <text>`
+(with `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN` set) shows names and IDs. Every key is
+described in jiramd's
+[configuration reference](https://github.com/ihudak/jiramd/blob/main/docs/configuration.md).
 
-- **Links in the export** use `JIRA_BASE_URL` in `src/config.py`, not `SERVER`.
-  Change both.
-- **Custom field IDs** differ between sites. `FIELD_MAPPING` in `src/config.py`
-  lists them, and a few (Status details, the assignee and release-notes fields)
-  are also used directly in `src/markdown_generator.py`. `CLAUDE.md` lists them.
+## Updating jiramd
 
-On another site, a field ID that does not exist there is simply left empty, but
-one that exists with a different meaning is exported under the wrong name.
+`requirements.txt` pins a jiramd release tag. To update, change the tag
+(`…@v0.1.0` → `…@v0.2.0`); the next `./runme.sh` installs it. A cron line that
+calls `.venv/bin/python src/main.py` directly needs `./runme.sh` (or
+`pip install -r requirements.txt`) to have run once in that `.venv`.
 
 ## Development
 
@@ -187,6 +199,6 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-`src/jira_markup_converter.py` is shared with the sibling `jira-workitem-import`
-project; the test that keeps the two copies in step lives there. `CLAUDE.md`
-describes the architecture and how to add a Jira field.
+The tests check that `src/main.py` translates this tool's command line and
+credentials for jiramd, and that `jiramd.toml` keeps snapshots as they were.
+Changes to how snapshots are made belong in [jiramd](https://github.com/ihudak/jiramd).
