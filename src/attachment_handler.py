@@ -4,6 +4,7 @@ Downloads and manages Jira attachments.
 """
 
 import hashlib
+import json
 import os
 import re
 import requests
@@ -23,16 +24,19 @@ class AttachmentHandler:
         
         Args:
             jira_client: Authenticated Jira client
-            attachments_dir: Per-import directory (kept for directory structure)
+            attachments_dir: Per-import directory, written only when there is no shared pool
             shared_dir: Optional shared pool directory for content-based deduplication.
                         When provided, files are stored as ``<sha256_8>_<filename>`` and
-                        identical content is never downloaded more than once.
+                        an attachment already pooled is not downloaded again.
         """
         self.jira_client = jira_client
         self.attachments_dir = Path(attachments_dir)
         self.shared_dir = Path(shared_dir) if shared_dir else None
         self.downloaded_files: Dict[str, str] = {}  # original_name -> local_filename
         self.image_mapping: Dict[str, str] = {}  # jira_attachment_id -> local_filename
+        # Pool filename per Jira attachment ID, kept across runs. An attachment
+        # ID always names the same content, so a pooled ID needs no download.
+        self.pooled_by_id: Dict[str, str] = self._read_pool_record()
     
     def download_attachments(self, issue) -> Tuple[List[str], List[str]]:
         """
@@ -51,9 +55,6 @@ class AttachmentHandler:
         if not attachments:
             return [], []
         
-        # Create attachments directory
-        self.attachments_dir.mkdir(parents=True, exist_ok=True)
-        
         images = []
         others = []
         
@@ -69,31 +70,60 @@ class AttachmentHandler:
                     images.append(local_filename)
                 else:
                     others.append(local_filename)
-        
+
+        if self.shared_dir is not None:
+            self._write_pool_record()
         return images, others
+
+    POOL_RECORD = ".attachment-ids.json"
+
+    def _read_pool_record(self) -> Dict[str, str]:
+        """Pool filenames by attachment ID from earlier runs; empty when missing or unreadable."""
+        if self.shared_dir is None:
+            return {}
+        try:
+            record = json.loads((self.shared_dir / self.POOL_RECORD).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(record, dict):
+            return {}
+        return {k: v for k, v in record.items() if isinstance(v, str) and v == Path(v).name}
+
+    def _write_pool_record(self) -> None:
+        self.shared_dir.mkdir(parents=True, exist_ok=True)
+        (self.shared_dir / self.POOL_RECORD).write_text(
+            json.dumps(self.pooled_by_id, indent=1, sort_keys=True), encoding="utf-8"
+        )
     
     def _download_attachment(self, attachment) -> Optional[str]:
         """
         Download a single attachment.
         
         When a shared pool directory is configured, the file is stored as
-        ``<sha256_8>_<original_filename>``.  If an identical file already exists
-        in the pool (same hash) it is reused without re-downloading.  If the
+        ``<sha256_8>_<original_filename>``.  An attachment ID already recorded
+        with a file still in the pool is reused without downloading; identical
+        content under a new ID is downloaded but written only once.  If the
         shared pool is not configured the original behaviour is preserved.
-        
+
         Args:
             attachment: Jira attachment object
-            
+
         Returns:
             str: Local filename if successful, None otherwise
         """
         try:
-            content = attachment.get()
-            
             if self.shared_dir is not None:
-                return self._store_in_shared_pool(attachment.filename, content)
-            
+                pooled = self.pooled_by_id.get(str(attachment.id))
+                if pooled and (self.shared_dir / pooled).is_file():
+                    print(f"  Reused (unchanged): {pooled}")
+                    return pooled
+                pooled = self._store_in_shared_pool(attachment.filename, attachment.get())
+                self.pooled_by_id[str(attachment.id)] = pooled
+                return pooled
+
             # Legacy path: write directly to per-import attachments_dir
+            content = attachment.get()
+            self.attachments_dir.mkdir(parents=True, exist_ok=True)
             local_filename = self._get_unique_filename(attachment.filename)
             local_path = self.attachments_dir / local_filename
             with open(local_path, 'wb') as f:

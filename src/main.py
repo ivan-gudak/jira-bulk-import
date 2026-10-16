@@ -119,7 +119,8 @@ def should_skip(work_item_id: str, interval_days: int, data_dir: Path) -> bool:
     if not timestamps:
         return False
     try:
-        last_dt = datetime.strptime(timestamps[0], "%Y-%m-%d %H-%M-%S").replace(tzinfo=timezone.utc)
+        # The stamp is local time (main() names snapshots from datetime.now()).
+        last_dt = datetime.strptime(timestamps[0], "%Y-%m-%d %H-%M-%S").astimezone()
     except ValueError:
         return False
     elapsed_days = (datetime.now(timezone.utc) - last_dt).total_seconds() / 86400
@@ -133,7 +134,9 @@ def import_ticket(jira_client, work_item_id: str, timestamp: str, data_dir: Path
     comments_dir = item_dir / "Comments"
     shared_dir = item_dir / "attachments_shared"
 
-    for d in (attachments_dir, comments_dir, shared_dir):
+    # attachments_dir is not created: with a shared pool every file goes to
+    # shared_dir, and AttachmentHandler writes the per-run folder only without one.
+    for d in (comments_dir, shared_dir):
         d.mkdir(parents=True, exist_ok=True)
 
     # Fetch issue with all fields (not just the mapped ones) so the RFE fallback

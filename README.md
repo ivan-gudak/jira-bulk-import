@@ -111,19 +111,20 @@ Each run creates a timestamped snapshot under `.data/`:
     ├── Comments/
     │   ├── PROJ-123-comments-2026-04-22 07-05-00.md
     │   └── PROJ-123-comments-2026-04-22 19-05-00.md
-    ├── Attachments/
-    │   ├── 2026-04-22 07-05-00/      # created per run, stays empty
-    │   └── 2026-04-22 19-05-00/
     └── attachments_shared/           # every attachment file, all runs
+        └── .attachment-ids.json      # which Jira attachment is which file
 ```
 
 Timestamps are the local time of the machine that ran the import.
 
 Attachments are deduplicated by content hash: each file is stored once in
 `attachments_shared/` as `<hash>_<filename>`, and every snapshot links to it
-there. Attachments are still downloaded on every run — an unchanged file is
-just not written again. The per-run `Attachments/<timestamp>/` folders are
-created but not used.
+there. `.attachment-ids.json` records which Jira attachment each file came
+from, so an attachment already in the pool is not downloaded again. If the
+record or a pooled file is missing, that attachment is simply downloaded again.
+
+Older versions also created an empty `Attachments/<timestamp>/` folder on every
+run. Nothing uses them; they can be deleted.
 
 ### What a snapshot contains
 
